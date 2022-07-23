@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<header>
+  <title>Hellify</title>
+  <style>
+    .loader {
+      border: 2px solid white;
+      border-top: 2px solid gray;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 0.5s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</header>
+
+<body>
+  <h1>Hellify</h1>
+  <h2><em>Web Browser Edition!</em></h2>
+
+  <div>
+    <canvas id="inputCanvas" width="256" height="256"></canvas>
+    <canvas id="outputCanvas" width="256" height="256"></canvas>
+  </div>
+
+  <div id="spinner" class="loader" hidden></div>
+  <input id="uploader" type="file" />
+  <button id="convertButton">Convert!</button>
+
+  <p>---</p>
+
+  <h2>FAQ</h2>
+
+  <h3>What</h3>
+  <p>A <a href="https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix">CycleGAN</a> model that was trained on images
+    of landscapes and fires in PyTorch and then
+    converted to ONNX. This demo uses the <a href="https://github.com/microsoft/onnxruntime/tree/master/js/web">web
+      onnxruntime</a> to run the ONNX model locally within the browser.</p>
+
+  <h3>How</h3>
+  <p>Upload an image and press the convert button to run it through the model. This will take a while. Images are
+    resized to 256 x 256 since those are the dimensions CycleGAN uses.</p>
+
+  <h3>Why</h3>
+  <p>lol idk</p>
+
+  <!-- import ONNXRuntime Web from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <script>
+    const HEIGHT = 256;
+    const WIDTH = 256;
+    const inputCanvas = document.getElementById('inputCanvas');
+    const inputCtx = inputCanvas.getContext('2d');
+    inputCtx.fillStyle = 'black';
+    const outputCanvas = document.getElementById('outputCanvas');
+    const outputCtx = outputCanvas.getContext('2d');
+    outputCtx.fillStyle = 'black';
+    const uploader = document.getElementById('uploader');
+    const convertButton = document.getElementById('convertButton');
+    const spinner = document.getElementById('spinner');
+
+    document.body.onload = () => {
+      const inputImg = new Image();
+      inputImg.src = './sample/river.jpg';
+      inputImg.onload = () => {
+        inputCtx.drawImage(inputImg, 0, 0, WIDTH, HEIGHT);
+      }
+      const outputImg = new Image();
+      outputImg.src = './sample/river_out.jpg';
+      outputImg.onload = () => {
+        outputCtx.drawImage(outputImg, 0, 0, WIDTH, HEIGHT);
+      }
+    }
+
+    uploader.onchange = () => {
+      if (uploader.files && uploader.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target.result;
+          img.onload = () => {
+            inputCtx.fillRect(0, 0, WIDTH, HEIGHT);
+            inputCtx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+            outputCtx.fillRect(0, 0, WIDTH, HEIGHT);
+          }
+        }
+        reader.readAsDataURL(uploader.files[0]);
+      }
+    }
+
+    function imageDataArrayToRgba(data) {
+      const r = [];
+      const g = [];
+      const b = [];
+      const a = [];
+      for (let i = 0; i < data.length; i += 4) {
+        r.push(data[i + 0]);
+        g.push(data[i + 1]);
+        b.push(data[i + 2]);
+        a.push(data[i + 3]);
+      }
+      return [r, g, b, a];
+    }
+
+    function rgbaToImageDataArray(r, g, b, a) {
+      if (!(r.length == g.length && g.length == b.length && b.length == a.length)) {
+        throw new Error('RGB array lengths do not match');
+      }
+      const imgDataArray = Array(r.length * 4);
+      let counter = 0;
+      for (let i = 0; i < r.length; i++) {
+        imgDataArray[counter + 0] = r[i];
+        imgDataArray[counter + 1] = g[i];
+        imgDataArray[counter + 2] = b[i];
+        imgDataArray[counter + 3] = a[i];
+        counter += 4;
+      }
+      return imgDataArray;
+    }
+
+    function setIsLoading(isLoading) {
+      if (isLoading) {
+        convertButton.disabled = isLoading;
+        uploader.disabled = isLoading;
+        spinner.hidden = !isLoading;
+      } else {
+        convertButton.disabled = isLoading;
+        uploader.disabled = isLoading;
+        spinner.hidden = !isLoading;
+      }
+    }
+
+    async function hellifyImage() {
+      const session = await ort.InferenceSession.create('./models/hellscape.onnx');
+
+      const inputImgData = inputCtx.getImageData(0, 0, WIDTH, HEIGHT);
+      const [inputR, inputG, inputB, _] = imageDataArrayToRgba(inputImgData.data);
+      const tensorData = [...inputR, ...inputG, ...inputB];
+
+      const inData = Float32Array.from(tensorData);
+      const inTensor = new ort.Tensor('float32', inData, [1, 3, 256, 256]);
+
+      const feeds = { 'input.1': inTensor };
+      const results = await session.run(feeds);
+
+      const outputData = results['185'].data;
+
+      const CHUNK_LENGTH = WIDTH * HEIGHT;
+      const outputR = outputData.slice(0 * CHUNK_LENGTH, 1 * CHUNK_LENGTH);
+      const outputG = outputData.slice(1 * CHUNK_LENGTH, 2 * CHUNK_LENGTH);
+      const outputB = outputData.slice(2 * CHUNK_LENGTH, 3 * CHUNK_LENGTH);
+      const outputA = inputImgData.data.slice(CHUNK_LENGTH * 3);
+      const outputDataArray = Uint8ClampedArray.from(
+        rgbaToImageDataArray(outputR, outputG, outputB, outputA)
+          .map((el) => (el + 1) / 2.0 * 255.0),
+      );
+      const outputImgData = new ImageData(outputDataArray, 256, 256);
+      outputCtx.putImageData(outputImgData, 0, 0);
+    }
+
+    convertButton.onclick = async (event) => {
+      setIsLoading(true);
+      setTimeout(async () => {
+        try {
+          await hellifyImage();
+        } catch (error) {
+          console.error(e);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 0);
+    }
+  </script>
+</body>
+
+</html>
