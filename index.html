@@ -114,7 +114,7 @@
 
     function rgbaToImageDataArray(r, g, b, a) {
       if (!(r.length == g.length && g.length == b.length && b.length == a.length)) {
-        throw new Error('RGB array lengths do not match');
+        throw new Error('RGBA array lengths do not match');
       }
       const imgDataArray = Array(r.length * 4);
       let counter = 0;
@@ -129,15 +129,9 @@
     }
 
     function setIsLoading(isLoading) {
-      if (isLoading) {
-        convertButton.disabled = isLoading;
-        uploader.disabled = isLoading;
-        spinner.hidden = !isLoading;
-      } else {
-        convertButton.disabled = isLoading;
-        uploader.disabled = isLoading;
-        spinner.hidden = !isLoading;
-      }
+      convertButton.disabled = isLoading;
+      uploader.disabled = isLoading;
+      spinner.hidden = !isLoading;
     }
 
     async function hellifyImage() {
